@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>遡行図作成アプリ (改良版)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+  <style>
+    body, html { margin: 0; padding: 0; height: 100%; }
+    #map { height: 100%; width: 100%; }
+    #toolbar { position: absolute; top: 10px; left: 10px; z-index: 1000; background: white; padding: 5px; border-radius: 5px; display: flex; flex-direction: column; }
+    .icon-btn { width: 32px; height: 32px; margin: 2px; cursor: pointer; }
+    input[type="file"] { display: none; }
+  </style>
+</head>
+<body>
+  <div id="toolbar" style="flex-direction: row;"></div>
+    <button id="exportJson">JSONでダウンロード</button>
+    <button id="importJsonBtn">JSONを読み込む</button>
+    <input type="file" id="importJson" accept="application/json">
+    <input type="text" id="searchBox" placeholder="地名検索">
+    <button id="searchBtn">検索</button>
+    <img src="https://cdn-icons-png.flaticon.com/512/684/684908.png" id="waterfall" class="icon-btn" title="滝">
+    <img src="https://cdn-icons-png.flaticon.com/512/6069/6069058.png" id="gorge" class="icon-btn" title="ゴルジュ">
+    <img src="https://cdn-icons-png.flaticon.com/512/2217/2217553.png" id="rock" class="icon-btn" title="岩">
+    <img src="https://cdn-icons-png.flaticon.com/512/271/271226.png" id="arrow" class="icon-btn" title="巻き道">
+    <img src="https://cdn-icons-png.flaticon.com/512/149/149059.png" id="memo" class="icon-btn" title="メモ">
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+  <script>
+    const map = L.map('map').setView([35.362222, 138.731388], 13);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const icons = {
+      waterfall: L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png', iconSize: [32,32] }),
+      gorge: L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/6069/6069058.png', iconSize: [32,32] }),
+      rock: L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/2217/2217553.png', iconSize: [32,32] }),
+      arrow: L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/271/271226.png', iconSize: [32,32] }),
+      memo: L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/149/149059.png', iconSize: [20,20] })
+    };
+
+    const drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
+
+    const drawControl = new L.Control.Draw({
+        draw: { polygon: false, circle: false, rectangle: false, circlemarker: false },
+        edit: { featureGroup: drawnItems }
+    });
+    map.addControl(drawControl);
+
+    map.on(L.Draw.Event.CREATED, function (e) {
+      const layer = e.layer;
+      drawnItems.addLayer(layer);
+    });
+
+    let currentIconType = null;
+
+    document.querySelectorAll('.icon-btn').forEach(btn => {
+      btn.onclick = () => { currentIconType = btn.id; };
+    });
+
+    map.on('click', function(e) {
+      if (currentIconType) {
+        const marker = L.marker(e.latlng, {icon: icons[currentIconType]}).addTo(drawnItems);
+        if(currentIconType === 'memo'){
+          const memo = prompt('地形メモを入力:');
+          marker.bindPopup(memo).openPopup();
+        }
+        currentIconType = null;
+      }
+    });
+
+    document.getElementById('exportJson').onclick = () => {
+      const data = drawnItems.toGeoJSON();
+      const blob = new Blob([JSON.stringify(data)], {type: 'application/json'});
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'sokozu.json';
+      link.click();
+    };
+
+    document.getElementById('importJsonBtn').onclick = () => document.getElementById('importJson').click();
+
+    document.getElementById('importJson').onchange = (event) => {
+      const file = event.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const data = JSON.parse(e.target.result);
+        L.geoJSON(data, {onEachFeature: (feature, layer) => drawnItems.addLayer(layer)});
+      };
+      reader.readAsText(file);
+    };
+
+    document.getElementById('searchBtn').onclick = () => {
+      const query = document.getElementById('searchBox').value;
+      fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`)
+        .then(res => res.json()).then(data => {
+          if(data[0]) map.setView([data[0].lat, data[0].lon], 15);
+          else alert('地名が見つかりません');
+        });
+    };
+  </script>
+</body>
+</html>
